@@ -9,9 +9,14 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
+using System.Net.Http;
+using System.Net.Http.Json;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
 namespace EventFetcher
 {
-    public class Event
+    public class Event : IComparable
     {
         private DateTime date;
         private string? rawDate; // fallback in case date is in an invalid format
@@ -38,7 +43,14 @@ namespace EventFetcher
             this.url = url;
             this.eventType = eventType;
             this.location = location;
-            this.description = description;
+
+            if (description != String.Empty)
+            {
+                this.description = description
+                    .Replace("\r", " ").Replace("\n", " ")
+                    .Trim();
+            }
+            else this.description = description;
 
             if (date is DateTime)
             {
@@ -52,6 +64,23 @@ namespace EventFetcher
             }
         }
 
+        public override bool Equals(object? obj)
+        {
+            if (obj == null) return false;
+            if (obj is Event) return this.Url == ((Event)obj).Url;
+            return base.Equals(obj);
+        }
+
+        public override int GetHashCode()
+            => base.GetHashCode();
+
+        int IComparable.CompareTo(object? obj)
+        {
+            if (obj == null) return -1;
+            if (obj is Event) return String.Compare(this.Url, ((Event)obj).Url);
+            return -1;
+        }
+
         public override string ToString()
         {
             return $"Title: '{title}'\nUrl: '{url}'\nEvent Type: '{eventType}'\nLocation: '{location}'\nDescription: '{description}'\nDate: {date}\nRawDate: '{rawDate}'";
@@ -60,7 +89,7 @@ namespace EventFetcher
 
     public enum CrawlerTarget
     {
-        TechUK
+        TechUK, CenturyClub, Meetup, Eventbrite
     }
 
     public class Wrapper
@@ -103,21 +132,59 @@ namespace EventFetcher
         const string TU_EVENTTYPE_WRAPPER = ".event-type-badge";
         const string TU_LOCATION_WRAPPER = ".event-venue";
 
+        const string CC_BASE_URL = "https://centuryclub.co.uk/tag/events/";
+        const string CC_ARTICLE_WRAPPER = ".elementor-location-archive .e-loop-item";
+        const string CC_TITLE_WRAPPER = ".elementor-widget-theme-post-title .elementor-heading-title a";
+        const string CC_DATE_WRAPPER = ".elementor-widget-post-info .elementor-icon-list-item:has(.elementor-post-info__item--type-custom) .elementor-icon-list-text";
+        const string CC_DESC_WRAPPER = ".articleItem--excerpt .elementor-icon-list-text";
+        const string CC_EVENTTYPE_WRAPPER = ".elementor-post-info__item--type-terms .elementor-post-info__terms-list-item";
+        const string CC_LOCATION_WRAPPER = null;
+
         private Wrapper? wrapper;
+        private CrawlerTarget target;
+
+        public CrawlerTarget Target => target;
+
+        private IList<Event> Process()
+        {
+            HtmlAgilityPack.HtmlDocument? doc = FetchHTML();
+            if (doc == null) return new List<Event>();
+
+            IList<HtmlNode> elems = FetchEvents(doc);
+            IList<Event> events = DeentitizeEvents(elems);
+            return events;
+        }
 
         public IList<Event>? CrawlEvents(CrawlerTarget target)
-        {   
+        {
+            this.target = target;
+
             switch (target)
             {
                 case CrawlerTarget.TechUK:
                     wrapper = new Wrapper(TU_BASE_URL, TU_ARTICLE_WRAPPER, TU_TITLE_WRAPPER, TU_DATE_WRAPPER, TU_DESC_WRAPPER, TU_EVENTTYPE_WRAPPER, TU_LOCATION_WRAPPER);
-                    
-                    HtmlAgilityPack.HtmlDocument? doc = FetchHTML();
-                    if (doc == null) return new List<Event>();
+                    return Process();
 
-                    IList<HtmlNode> elems = FetchEvents(doc);
-                    IList<Event> events = DeentitizeEvents(elems);
-                    return events;
+                case CrawlerTarget.CenturyClub:
+                    wrapper = new Wrapper(CC_BASE_URL, CC_ARTICLE_WRAPPER, CC_TITLE_WRAPPER, CC_DATE_WRAPPER, CC_DESC_WRAPPER, CC_EVENTTYPE_WRAPPER, CC_LOCATION_WRAPPER);
+                    return Process();
+
+                case CrawlerTarget.Meetup:
+                    var meetupCrawler = new MeetupCrawler();
+                    List<Event> meetupRes = new List<Event>();
+                    meetupRes.AddRange(meetupCrawler.Fetch("Enterprise Technology"));
+                    meetupRes.AddRange(meetupCrawler.Fetch("Fintech Events"));
+                    meetupRes.AddRange(meetupCrawler.Fetch("Data Science"));
+                    return meetupRes;
+
+                case CrawlerTarget.Eventbrite:
+                    var eventbriteCrawler = new EventbriteCrawler();
+                    List<Event> eventbriteRes = new List<Event>();
+                    eventbriteRes.AddRange(eventbriteCrawler.FetchAllPages("Enterprise Technology"));
+                    eventbriteRes.AddRange(eventbriteCrawler.FetchAllPages("Fintech Events"));
+                    eventbriteRes.AddRange(eventbriteCrawler.FetchAllPages("Data Science"));
+                    return eventbriteRes;
+
                 default:
                     return new List<Event>();
             }
@@ -174,6 +241,72 @@ namespace EventFetcher
             return events;
         }
 
+        private HtmlNode? QuerySelectorSafe(HtmlNode node, string selector)
+        {
+            if (string.IsNullOrWhiteSpace(selector))
+                return null;
+
+            try
+            {
+                // try the normal css selector first
+                return node.QuerySelector(selector);
+            }
+            catch (NotSupportedException)
+            {
+                if (!selector.Contains(":has("))
+                    throw;
+
+                int hasIndex = selector.IndexOf(":has(", StringComparison.Ordinal);
+                int openParen = hasIndex + 5;
+                int closeParen = selector.IndexOf(')', openParen);
+                if (hasIndex < 0 || closeParen < 0)
+                    return null;
+
+                string beforePart = selector.Substring(0, hasIndex).Trim();
+                string insidePart = selector.Substring(openParen, closeParen - openParen).Trim();
+                string afterPart = selector.Substring(closeParen + 1).Trim();
+
+                IEnumerable<HtmlNode> candidates;
+                try
+                {
+                    candidates = node.QuerySelectorAll(beforePart);
+                }
+                catch
+                {
+                    return null;
+                }
+
+                foreach (HtmlNode candidate in candidates)
+                {
+                    HtmlNode? insideMatch = null;
+                    try
+                    {
+                        insideMatch = candidate.QuerySelector(insidePart);
+                    }
+                    catch
+                    {
+                        insideMatch = null;
+                    }
+
+                    if (insideMatch != null)
+                    {
+                        if (string.IsNullOrWhiteSpace(afterPart))
+                            return candidate;
+
+                        try
+                        {
+                            HtmlNode? final = candidate.QuerySelector(afterPart);
+                            if (final != null)
+                                return final;
+                        }
+                        catch { }
+                    }
+                }
+
+                return null;
+            }
+        }
+
         private Event? ProcessNode(HtmlNode node)
         {
             if (wrapper == null)
@@ -188,7 +321,7 @@ namespace EventFetcher
             string? rawDate;
             DateTime date;
 
-            HtmlNode titleNode = node.QuerySelector(wrapper.TitleWrapper);
+            HtmlNode titleNode = QuerySelectorSafe(node, wrapper.TitleWrapper);
             if (titleNode != null)
             {
                 title = HtmlEntity.DeEntitize(titleNode.InnerText).Trim();
@@ -200,7 +333,7 @@ namespace EventFetcher
                 return null;
             }
 
-            HtmlNode dateNode = node.QuerySelector(wrapper.DateWrapper);
+            HtmlNode dateNode = QuerySelectorSafe(node, wrapper.DateWrapper);
             if (dateNode != null)
             {
                 string rawHtmlDate = HtmlEntity.DeEntitize(dateNode.InnerText).Trim();
@@ -215,17 +348,18 @@ namespace EventFetcher
                 return null;
             }
 
-            HtmlNode descriptionNode = node.QuerySelector(wrapper.DescriptionWrapper);
+            HtmlNode descriptionNode = QuerySelectorSafe(node, wrapper.DescriptionWrapper);
             if (descriptionNode != null)
             {
-                description = HtmlEntity.DeEntitize(descriptionNode.InnerText).Trim();
+                description = HtmlEntity.DeEntitize(descriptionNode.InnerText);
             }
             else
             {
+                if (target == CrawlerTarget.CenturyClub) return null;
                 description = String.Empty;
             }
 
-            HtmlNode typeNode = node.QuerySelector(wrapper.EventTypeWrapper);
+            HtmlNode typeNode = QuerySelectorSafe(node, wrapper.EventTypeWrapper);
             if (typeNode != null)
             {
                 eventType = HtmlEntity.DeEntitize(typeNode.InnerText).Trim();
@@ -235,14 +369,21 @@ namespace EventFetcher
                 eventType = String.Empty;
             }
 
-            HtmlNode locationNode = node.QuerySelector(wrapper.LocationWrapper);
-            if (locationNode != null)
+            if (wrapper.LocationWrapper == null)
             {
-                location = HtmlEntity.DeEntitize(locationNode.InnerText).Trim();
+                location = String.Empty;
             }
             else
             {
-                location = String.Empty;
+                HtmlNode locationNode = QuerySelectorSafe(node, wrapper.LocationWrapper);
+                if (locationNode != null)
+                {
+                    location = HtmlEntity.DeEntitize(locationNode.InnerText).Trim();
+                }
+                else
+                {
+                    location = String.Empty;
+                }
             }
 
             if (rawDate == null) curEvent = new Event(title, url, eventType, location, description, date);

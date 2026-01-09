@@ -57,13 +57,26 @@ namespace EventFetcher
             Export(destination);
         }
 
+        private void DebugEvents()
+        {
+            if (this.events != null)
+            {
+                foreach (var e in events)
+                    Console.WriteLine(e);
+            }
+        }
+
         private void TargetUnion(IList<CrawlerTarget> targets)
         {
             var crawl = new Crawler();
 
             this.events = targets
                 .SelectMany(t => crawl.CrawlEvents(t) ?? Enumerable.Empty<Event>())
+                .Where(x => x.Date >= DateTime.Today)
+                .DistinctBy(x => x.Url)
                 .ToList();
+
+            DebugEvents();
         }
 
         private void Export(string path)

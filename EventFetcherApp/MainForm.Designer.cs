@@ -53,7 +53,7 @@
             // 
             // GetEventsButton
             // 
-            GetEventsButton.Location = new Point(219, 136);
+            GetEventsButton.Location = new Point(232, 136);
             GetEventsButton.Name = "GetEventsButton";
             GetEventsButton.Size = new Size(112, 63);
             GetEventsButton.TabIndex = 2;
@@ -65,7 +65,7 @@
             // 
             AutoScaleDimensions = new SizeF(10F, 25F);
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(355, 230);
+            ClientSize = new Size(369, 230);
             Controls.Add(GetEventsButton);
             Controls.Add(EventsLabel);
             Controls.Add(EventCollection);

@@ -6,8 +6,11 @@ namespace EventFetcherApp
 {
     public partial class MainForm : Form
     {
-        private IList<TargetWrapper> labels = new List<TargetWrapper> {
+        private readonly IList<TargetWrapper> labels = new List<TargetWrapper> {
             new TargetWrapper("TechUK", CrawlerTarget.TechUK),
+            new TargetWrapper("CenturyClub", CrawlerTarget.CenturyClub),
+            new TargetWrapper("Meetup", CrawlerTarget.Meetup),
+            new TargetWrapper("Eventbrite", CrawlerTarget.Eventbrite),
         };
 
         private string destinationPath = String.Empty;
@@ -73,6 +76,8 @@ namespace EventFetcherApp
 
             if (new Exporter(targets, destinationPath).Result == ExporterResult.OK)
                 OpenExport();
+            else
+                ErrorHandler.Show("Form", "Fatal error: could not fetch events.");
 
             GetEventsButton.Enabled = true;
         }
