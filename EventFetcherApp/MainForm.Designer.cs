@@ -32,6 +32,7 @@
             EventsLabel = new Label();
             GetEventsButton = new Button();
             DestSelector = new SaveFileDialog();
+            FetchingLabel = new Label();
             SuspendLayout();
             // 
             // EventCollection
@@ -53,7 +54,7 @@
             // 
             // GetEventsButton
             // 
-            GetEventsButton.Location = new Point(232, 136);
+            GetEventsButton.Location = new Point(281, 136);
             GetEventsButton.Name = "GetEventsButton";
             GetEventsButton.Size = new Size(112, 63);
             GetEventsButton.TabIndex = 2;
@@ -61,11 +62,22 @@
             GetEventsButton.UseVisualStyleBackColor = true;
             GetEventsButton.Click += FetchEvents;
             // 
+            // FetchingLabel
+            // 
+            FetchingLabel.AutoSize = true;
+            FetchingLabel.BorderStyle = BorderStyle.FixedSingle;
+            FetchingLabel.Location = new Point(217, 72);
+            FetchingLabel.Name = "FetchingLabel";
+            FetchingLabel.Size = new Size(188, 52);
+            FetchingLabel.TabIndex = 3;
+            FetchingLabel.Text = "Fetching...\r\n(this may take a while)\r\n";
+            // 
             // MainForm
             // 
             AutoScaleDimensions = new SizeF(10F, 25F);
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(369, 230);
+            ClientSize = new Size(425, 230);
+            Controls.Add(FetchingLabel);
             Controls.Add(GetEventsButton);
             Controls.Add(EventsLabel);
             Controls.Add(EventCollection);
@@ -80,5 +92,6 @@
         private Label EventsLabel;
         private Button GetEventsButton;
         private SaveFileDialog DestSelector;
+        private Label FetchingLabel;
     }
 }

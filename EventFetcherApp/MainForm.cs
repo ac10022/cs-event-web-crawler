@@ -18,6 +18,8 @@ namespace EventFetcherApp
         public MainForm()
         {
             InitializeComponent();
+
+            this.FetchingLabel.Hide();
             PopulateEventCollection();
         }
 
@@ -63,7 +65,7 @@ namespace EventFetcherApp
 
             if (destinationPath == String.Empty)
             {
-                ErrorHandler.Show("Form", "No destination selected."); ;
+                ErrorHandler.Show("Form", "No destination selected.");
                 return;
             }
 
@@ -73,6 +75,7 @@ namespace EventFetcherApp
                                                 .ToList();
 
             GetEventsButton.Enabled = false;
+            this.FetchingLabel.Show();
 
             if (new Exporter(targets, destinationPath).Result == ExporterResult.OK)
                 OpenExport();
@@ -80,6 +83,7 @@ namespace EventFetcherApp
                 ErrorHandler.Show("Form", "Fatal error: could not fetch events.");
 
             GetEventsButton.Enabled = true;
+            this.FetchingLabel.Hide();
         }
 
         private void OpenExport()
